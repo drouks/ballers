@@ -3,8 +3,9 @@ const GAME_WIDTH = 350;
 const MAX_BALLS = 20;
 const PLAYER_WIDTH = 20;
 const PLAYER_HEIGHT = 30;
+const STAR_COUNT = 80;
 const COLLISION_PADDING = 6;
-const FONT="Helvetica"
+const FONT = "Helvetica";
 
 let balls = [];
 let player;
@@ -17,16 +18,19 @@ let dodgedText;
 let gameover = false;
 let countdown = 5;
 let intervalId;
-const colors = [
-  "green",
-  "blue",
-  "orange",
-  "red",
-  "purple",
-  "brown",
+const cometImages = {};
+const cometFiles = [
   "black",
+  "blue",
+  "brown",
+  "grey",
+  "red",
+  "green",
   "pink",
+  "purple",
 ];
+const playerImages = {};
+let stars = [];
 
 const pressedKeys = new Set();
 
@@ -45,10 +49,27 @@ document.addEventListener("keyup", (e) => {
   pressedKeys.delete(e.key.toLowerCase());
 });
 
+async function loadCometImages() {
+  cometFiles.forEach((name) => {
+    const img = new Image();
+    img.src = `assets/${name}.png`;
+    cometImages[name] = img;
+  });
+}
+
+async function loadPlayerImage() {
+  const img = new Image();
+  img.src = `assets/player.png`;
+  playerImages["player1"] = img;
+}
+
 /* ================= GAME START ================= */
 
-function startGame() {
+async function startGame() {
+  await loadCometImages();
+  await loadPlayerImage();
   gamearea.start();
+  initStars();
   player = new Rectangle(PLAYER_WIDTH, PLAYER_HEIGHT, "teal", 10, 520, 3);
   requestAnimationFrame(tick);
   setInterval(() => {
@@ -62,7 +83,7 @@ function tick() {
   let ctx = gamearea.context;
   drawBG();
   levelText = new LevelText(5, 10, "red", "Level: " + level);
-  dodgedText = new LevelText(280, 10, "green", "Score: " + dodgedballs);
+  dodgedText = new LevelText(280, 10, "yellow", "Score: " + dodgedballs);
 
   // updateText()
   if (!paused && !gameover) {
@@ -110,13 +131,16 @@ function spawnBalls() {
   }
 
   if (balls.length < MAX_BALLS) {
-    let ballSize = getRandomInt(3, 8);
+    let ballSize = getRandomInt(6, 14);
     let x = getRandomInt(ballSize, GAME_WIDTH - ballSize);
     let y = -ballSize;
 
     let speed = getRandomInt(1, level + 5);
-    let color = colors[getRandomInt(0, colors.length - 1)];
-    balls.push(new Circle(x, y, ballSize, color, color, 0, speed));
+
+    const cometName = cometFiles[getRandomInt(0, cometFiles.length)];
+    const cometImg = cometImages[cometName];
+
+    balls.push(new Circle(x, y, ballSize, cometImg, speed));
     spawnCooldown = 30;
   }
 }
@@ -187,35 +211,37 @@ class Rectangle {
     this.y = y;
     this.color = color;
     this.speed = speed;
+    this.image = playerImages["player1"];
   }
 
   draw() {
     let ctx = gamearea.context;
-    ctx.fillStyle = this.color;
-    ctx.fillRect(this.x, this.y, this.width, this.height);
+    ctx.drawImage(this.image, this.x, this.y, this.width, this.height);
   }
 }
 
 class Circle {
-  constructor(x, y, radius, fillcolor, strokecolor, outerwidth, speed) {
+  constructor(x, y, radius, image, speed) {
     this.radius = radius;
     this.x = x;
     this.y = y;
-    this.fillcolor = fillcolor;
-    this.strokecolor = strokecolor;
-    this.outerwidth = outerwidth;
+    this.image = image;
     this.speed = speed;
+    this.rotationspeed = 0.5 - speed / 100;
+    this.rotation = Math.random() * Math.PI * 2;
+    this.spin = (Math.random() - 0.5) * this.rotationspeed;
   }
-
   draw() {
-    let ctx = gamearea.context;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-    ctx.fillStyle = this.fillcolor;
-    ctx.fill();
-    ctx.lineWidth = this.outerwidth;
-    ctx.strokeStyle = this.strokecolor;
-    ctx.stroke();
+    const ctx = gamearea.context;
+    const size = this.radius * 2;
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    ctx.drawImage(this.image, -this.radius, -this.radius, size, size);
+    ctx.restore();
+
+    this.rotation += this.spin;
   }
 
   move() {
@@ -233,7 +259,7 @@ class LevelText {
 
   draw() {
     let ctx = gamearea.context;
-    ctx.font = "12px "+FONT;
+    ctx.font = "12px " + FONT;
     ctx.fillStyle = this.color;
     ctx.fillText(this.content, this.x, this.y);
   }
@@ -247,7 +273,7 @@ function getRandomInt(min, max) {
 
 function drawPauseText() {
   const ctx = gamearea.context;
-  ctx.font = "30px "+FONT;
+  ctx.font = "30px " + FONT;
   ctx.fillStyle = "rgba(0,0,0,0.7)";
   ctx.textAlign = "center";
   ctx.fillText("PAUSED", GAME_WIDTH / 2, GAME_HEIGHT / 2);
@@ -256,12 +282,12 @@ function drawPauseText() {
 
 function drawGameOverText() {
   const ctx = gamearea.context;
-  ctx.font = "30px "+FONT;
+  ctx.font = "30px " + FONT;
   ctx.fillStyle = "darkred";
   ctx.textAlign = "center";
-  ctx.fillText("You got hit!", GAME_WIDTH / 2, GAME_HEIGHT / 2);
-  ctx.font = "15px "+FONT;
-  ctx.fillStyle = "black";
+  ctx.fillText("Final score: "+dodgedballs, GAME_WIDTH / 2, GAME_HEIGHT / 2);
+  ctx.font = "15px " + FONT;
+  ctx.fillStyle = "white";
   ctx.fillText(
     "The game will restart in " + countdown + " seconds. Get ready!",
     GAME_WIDTH / 2,
@@ -270,26 +296,51 @@ function drawGameOverText() {
   ctx.textAlign = "left";
 }
 
+function drawStars() {
+  const ctx = gamearea.context;
+  const time = Date.now() * 0.002;
+
+  stars.forEach((s) => {
+    const alpha = s.a + Math.sin(time * s.twinkleSpeed + s.twinkleOffset) * 0.2;
+
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = "white";
+    ctx.fill();
+    s.y += 0.05;
+    if (s.y > GAME_HEIGHT) s.y = 0;
+  });
+
+  ctx.globalAlpha = 1;
+}
+
+function initStars() {
+  for (let i = 0; i < STAR_COUNT; i++) {
+    stars.push({
+      x: Math.random() * GAME_WIDTH,
+      y: Math.random() * GAME_HEIGHT,
+      r: Math.random() * 1.5 + 0.5,
+      a: Math.random() * 0.6 + 0.2,
+      twinkleSpeed: Math.random() * 0.02 + 0.01,
+      twinkleOffset: Math.random() * Math.PI * 2,
+    });
+  }
+}
+
 function drawBG() {
   const ctx = gamearea.context;
 
-  const gradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
-  gradient.addColorStop(0, "#f2f4f7");
-  gradient.addColorStop(1, "#d9dde3");
+  ctx.fillStyle = "rgba(1, 8, 19, 0.25)";
+  ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
+  const gradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+  gradient.addColorStop(0, "#010813");
+  gradient.addColorStop(1, "#061e41");
+  ctx.globalCompositeOperation = "destination-over";
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-
-  const g = ctx.createRadialGradient(
-    GAME_WIDTH / 2,
-    GAME_HEIGHT / 2,
-    50,
-    GAME_WIDTH / 2,
-    GAME_HEIGHT / 2,
-    GAME_WIDTH
-  );
-  g.addColorStop(0, "rgba(0,0,0,0)");
-  g.addColorStop(1, "rgba(0,0,0,0.15)");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  ctx.globalCompositeOperation = "source-over";
+  drawStars();
 }
